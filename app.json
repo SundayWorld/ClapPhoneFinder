@@ -1,0 +1,83 @@
+{
+  "expo": {
+    "name": "Clap Phone Finder",
+    "slug": "clap-phone-finder",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "clapphonefinder",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "backgroundColor": "#000000",
+
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+
+    "android": {
+      "package": "com.oddev.clapphonefinder",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-foreground.png",
+        "backgroundColor": "#000000"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.VIBRATE",
+        "android.permission.CAMERA",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BRIGHTNESS",
+        "android.permission.HIGH_SAMPLING_RATE_SENSORS"
+      ]
+    },
+
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.oddev.clapphonefinder",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "This app needs microphone access to detect claps and whistles to find your phone.",
+        "NSCameraUsageDescription": "This app needs camera access to control the flashlight when finding your phone."
+      }
+    },
+
+    "web": {
+      "favicon": "./assets/images/favicon.png"
+    },
+
+    "plugins": [
+      "expo-router",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "This app needs microphone access to detect claps and whistles to find your phone."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "This app needs camera access to control the flashlight."
+        }
+      ],
+      [
+        "expo-brightness",
+        {
+          "brightnessPermission": "This app needs brightness control to use flashlight when finding your phone."
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "This app needs motion sensor access for anti-theft detection."
+        }
+      ]
+    ],
+
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

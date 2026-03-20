@@ -1,0 +1,45 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+.expo-shared/
+
+# environment variables
+.env
+.env.*
+
+# build output
+dist/
+build/
+
+# Android build files
+
+android/
+
+# iOS build files
+ios/build/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Expo generated
+expo-env.d.ts
+
+# misc
+*.log
