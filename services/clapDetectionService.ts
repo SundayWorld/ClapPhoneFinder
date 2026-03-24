@@ -1,244 +1,197 @@
 import { Audio } from 'expo-av';
 
-export interface ClapDetectionConfig {
-  enabled: boolean;
-  sensitivity: 'low' | 'medium' | 'high';
-  clapCount: number;
-  backgroundNoiseFilter: boolean;
-}
-
-export interface ClapDetectorCallbacks {
-  onClapDetected: (clapNumber: number) => void;
-  onPatternDetected: () => void;
-  onAmplitudeUpdate?: (amplitude: number) => void;
-}
-
-interface ClapState {
-  lastClapTime: number;
-  clapCount: number;
-  isListening: boolean;
-}
+type ClapCallbacks = {
+  onPatternDetected?: () => void;
+};
 
 class ClapDetectionService {
   private recording: Audio.Recording | null = null;
-  private config: ClapDetectionConfig;
-  private callbacks: ClapDetectorCallbacks | null = null;
-  private state: ClapState = {
-    lastClapTime: 0,
-    clapCount: 0,
-    isListening: false,
-  };
-  private analysisInterval: ReturnType<typeof setInterval> | null = null;
-  private readonly CLAP_WINDOW_MS = 2000;
-  private readonly MIN_CLAP_INTERVAL_MS = 150;
-  private amplitudeHistory: number[] = [];
-  private readonly HISTORY_SIZE = 10;
-  private baseNoiseLevel = 0;
+  private callbacks: ClapCallbacks = {};
 
-  constructor(config: ClapDetectionConfig) {
-    this.config = config;
-  }
+  private noiseFloor = 0;
+  private lastTriggerTime = 0;
 
-  public updateConfig(config: Partial<ClapDetectionConfig>) {
-    this.config = { ...this.config, ...config };
-  }
+  // 👏 Double clap tracking
+  private lastClapTime = 0;
+  private clapCount = 0;
 
-  public setCallbacks(callbacks: ClapDetectorCallbacks) {
+  private readonly COOLDOWN = 1500;
+  private readonly INTERVAL = 60;
+
+  // 👖 Pocket detection
+  private muffledCount = 0;
+
+  // 🔋 control
+  private isListening = false;
+  private interval: ReturnType<typeof setInterval> | null = null;
+
+  // 🛡️ safety
+  private isStarting = false;
+  private isStopping = false;
+
+  public setCallbacks(callbacks: ClapCallbacks) {
     this.callbacks = callbacks;
   }
 
-  private getThreshold(): number {
-    const baseThreshold = this.config.backgroundNoiseFilter ? 0.12 : 0.08;
-    const sensitivityMultiplier = 
-      this.config.sensitivity === 'high' ? 0.6 : 
-      this.config.sensitivity === 'low' ? 1.4 : 1;
-    return baseThreshold * sensitivityMultiplier;
-  }
-
-  private calculateDynamicThreshold(): number {
-    if (this.amplitudeHistory.length < 5) {
-      return this.getThreshold();
-    }
-    const avgNoise = this.amplitudeHistory.reduce((a, b) => a + b, 0) / this.amplitudeHistory.length;
-    const dynamicThreshold = Math.max(this.getThreshold(), avgNoise * 2.5);
-    return dynamicThreshold;
-  }
-
-  private updateAmplitudeHistory(amplitude: number) {
-    this.amplitudeHistory.push(amplitude);
-    if (this.amplitudeHistory.length > this.HISTORY_SIZE) {
-      this.amplitudeHistory.shift();
-    }
-  }
-
-  private detectClap(amplitude: number): boolean {
-    const threshold = this.calculateDynamicThreshold();
-    
-    this.updateAmplitudeHistory(amplitude);
-    
-    if (this.callbacks?.onAmplitudeUpdate) {
-      this.callbacks.onAmplitudeUpdate(amplitude);
-    }
-
-    return amplitude > threshold;
-  }
-
-  private handleClapDetection() {
-    const now = Date.now();
-    
-    if (now - this.state.lastClapTime < this.MIN_CLAP_INTERVAL_MS) {
-      return;
-    }
-
-    if (now - this.state.lastClapTime > this.CLAP_WINDOW_MS) {
-      this.state.clapCount = 1;
-    } else {
-      this.state.clapCount++;
-    }
-
-    this.state.lastClapTime = now;
-
-    if (this.callbacks) {
-      this.callbacks.onClapDetected(this.state.clapCount);
-    }
-
-    if (this.state.clapCount >= this.config.clapCount) {
-      this.state.clapCount = 0;
-      if (this.callbacks) {
-        this.callbacks.onPatternDetected();
-      }
-    }
-  }
-
+  // ✅ FIXED START LISTENING (NO CRASH)
   public async startListening(): Promise<boolean> {
-    if (this.state.isListening) {
-      return true;
-    }
+    if (this.isListening || this.isStarting) return true;
+
+    this.isStarting = true;
 
     try {
       const { status } = await Audio.requestPermissionsAsync();
       if (status !== 'granted') {
-        console.error('ClapDetection: Microphone permission denied');
         return false;
       }
 
+      // ✅ SAFE AUDIO MODE (ANDROID SAFE)
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
         staysActiveInBackground: true,
-        shouldDuckAndroid: false,
       });
 
-      const recordingOptions: Audio.RecordingOptions = {
-        android: {
-          extension: '.m4a',
-          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-          audioEncoder: Audio.AndroidAudioEncoder.AAC,
-          sampleRate: 44100,
-          numberOfChannels: 1,
-          bitRate: 128000,
-        },
-        ios: {
-          extension: '.m4a',
-          audioQuality: Audio.IOSAudioQuality.HIGH,
-          sampleRate: 44100,
-          numberOfChannels: 1,
-          bitRate: 128000,
-          linearPCMBitDepth: 16,
-          linearPCMIsBigEndian: false,
-          linearPCMIsFloat: false,
-        },
-        web: {
-          mimeType: 'audio/webm',
-          bitsPerSecond: 128000,
-        },
-      };
+      // ✅ USE EXPO PRESET (NO CRASH)
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        undefined,
+        this.INTERVAL
+      );
 
-      const { recording } = await Audio.Recording.createAsync(recordingOptions);
       this.recording = recording;
-      this.state.isListening = true;
-      this.amplitudeHistory = [];
+      this.isListening = true;
 
-      this.startAnalysis();
+      this.startLoop();
 
-      console.log('ClapDetection: Started listening');
+      console.log('👏 ClapDetection Stable Started');
       return true;
     } catch (error) {
-      console.error('ClapDetection: Error starting listening:', error);
+      console.log('ClapDetection Error:', error);
       return false;
+    } finally {
+      this.isStarting = false;
     }
   }
 
-  private startAnalysis() {
-    if (this.analysisInterval) {
-      clearInterval(this.analysisInterval);
+  private updateNoise(amplitude: number) {
+    this.noiseFloor = this.noiseFloor * 0.92 + amplitude * 0.08;
+  }
+
+  private getThreshold() {
+    return this.noiseFloor + 0.06;
+  }
+
+  // 📱 Pocket detection (muffled sound filter)
+  private isMuffled(amp: number): boolean {
+    if (amp < 0.02) {
+      this.muffledCount++;
+    } else {
+      this.muffledCount = 0;
     }
 
-    this.analysisInterval = setInterval(async () => {
-      if (!this.recording || !this.state.isListening) return;
+    return this.muffledCount > 10;
+  }
+
+  // 👏 Detect clap spike
+  private isClap(amp: number): boolean {
+    return (
+      amp > this.getThreshold() &&
+      amp > this.noiseFloor * 1.8
+    );
+  }
+
+  // 👏 Double clap logic
+  private handleClap(now: number) {
+    const gap = now - this.lastClapTime;
+
+    if (gap < 400) {
+      this.clapCount++;
+    } else {
+      this.clapCount = 1;
+    }
+
+    this.lastClapTime = now;
+
+    if (this.clapCount === 2) {
+      this.clapCount = 0;
+
+      console.log('👏👏 Double Clap Detected');
+
+      this.callbacks.onPatternDetected?.();
+    }
+  }
+
+  private startLoop() {
+    if (this.interval) {
+      clearInterval(this.interval);
+    }
+
+    this.interval = setInterval(async () => {
+      if (!this.recording || !this.isListening) return;
 
       try {
         const status = await this.recording.getStatusAsync();
-        
+
         if (!status.isRecording) return;
 
-        const metering = (status as { metering?: number }).metering;
-        
-        if (metering !== undefined && metering !== -160) {
-          const normalizedAmplitude = this.normalizeMetering(metering);
-          
-          if (this.detectClap(normalizedAmplitude)) {
-            this.handleClapDetection();
+        if ('metering' in status && status.metering !== undefined) {
+          const amp = Math.max(0, (status.metering + 60) / 60);
+
+          this.updateNoise(amp);
+
+          // 📱 Ignore pocket muffled sounds
+          if (this.isMuffled(amp)) return;
+
+          const now = Date.now();
+
+          const isClap = this.isClap(amp);
+
+          if (isClap && now - this.lastTriggerTime > this.COOLDOWN) {
+            this.lastTriggerTime = now;
+
+            this.handleClap(now);
           }
         }
       } catch (error) {
-        console.error('ClapDetection: Analysis error:', error);
+        console.log('Loop Error:', error);
       }
-    }, 50);
+    }, this.INTERVAL);
   }
 
-  private normalizeMetering(metering: number): number {
-    const minDb = -60;
-    const maxDb = 0;
-    const clampedMetering = Math.max(minDb, Math.min(maxDb, metering));
-    return (clampedMetering - minDb) / (maxDb - minDb);
-  }
+  public async stopListening() {
+    if (this.isStopping) return;
 
-  public stopListening(): void {
-    this.state.isListening = false;
+    this.isStopping = true;
+    this.isListening = false;
 
-    if (this.analysisInterval) {
-      clearInterval(this.analysisInterval);
-      this.analysisInterval = null;
-    }
-
-    if (this.recording) {
-      try {
-        void this.recording.stopAndUnloadAsync();
-      } catch (error) {
-        console.error('ClapDetection: Error stopping recording:', error);
+    try {
+      if (this.interval) {
+        clearInterval(this.interval);
+        this.interval = null;
       }
-      this.recording = null;
+
+      if (this.recording) {
+        try {
+          const status = await this.recording.getStatusAsync();
+
+          if (status.isRecording) {
+            await this.recording.stopAndUnloadAsync();
+          }
+        } catch {}
+
+        this.recording = null;
+      }
+
+      this.clapCount = 0;
+      this.muffledCount = 0;
+
+      console.log('🛑 ClapDetection Stopped');
+    } catch (error) {
+      console.log('Stop Error:', error);
+    } finally {
+      this.isStopping = false;
     }
-
-    this.state.clapCount = 0;
-    this.state.lastClapTime = 0;
-    this.amplitudeHistory = [];
-
-    console.log('ClapDetection: Stopped listening');
-  }
-
-  public isActive(): boolean {
-    return this.state.isListening;
-  }
-
-  public getCurrentClapCount(): number {
-    return this.state.clapCount;
-  }
-
-  public resetClapCount(): void {
-    this.state.clapCount = 0;
-    this.state.lastClapTime = 0;
   }
 }
 

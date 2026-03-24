@@ -9,18 +9,22 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "backgroundColor": "#000000",
+
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
+
     "android": {
       "package": "com.oddev.clapphonefinder",
-      "versionCode": 1,
+      "versionCode": 2,
+
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-foreground.png",
         "backgroundColor": "#000000"
       },
+
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.VIBRATE",
@@ -30,41 +34,47 @@
         "android.permission.WAKE_LOCK"
       ]
     },
+
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.oddev.clapphonefinder",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "This app needs microphone access to detect claps and whistles to find your phone.",
-        "NSCameraUsageDescription": "This app needs camera access to control the flashlight when finding your phone."
+        "NSMicrophoneUsageDescription": "Detect claps and whistles to help you find your phone.",
+        "NSCameraUsageDescription": "Turn on flashlight to help locate your phone."
       }
     },
+
     "web": {
       "favicon": "./assets/images/favicon.png"
     },
+
     "plugins": [
       "expo-router",
       [
         "expo-av",
         {
-          "microphonePermission": "This app needs microphone access to detect claps and whistles to find your phone."
+          "microphonePermission": "Detect claps and whistles to help you find your phone."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "This app needs camera access to control the flashlight."
+          "cameraPermission": "Turn on flashlight to help locate your phone."
         }
       ]
     ],
+
     "experiments": {
       "typedRoutes": true
     },
+
     "extra": {
       "router": {},
       "eas": {
         "projectId": "10ac61e0-62e7-4be4-aece-783b1b504a64"
       }
     },
+
     "owner": "sunnyapp"
   }
 }
